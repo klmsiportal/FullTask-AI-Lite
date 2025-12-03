@@ -1,0 +1,8 @@
+{
+  "name": "FullTask AI Lite",
+  "description": "An expert AI assistant for developers, created by Akin S. Sokpah. Chat about code, concepts, and more with a master AI that feels like it's always available.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>FullTask AI Lite</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <style>
+    /* Custom scrollbar for a more refined look */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #1f2937; /* bg-gray-800 */
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #4b5563; /* bg-gray-600 */
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #6b7280; /* bg-gray-500 */
+    }
+  </style>
+<script type="importmap">
+{
+  "imports": {
+    "rxjs": "https://aistudiocdn.com/rxjs@^7.8.2?conditions=es2015",
+    "rxjs/operators": "https://aistudiocdn.com/rxjs@^7.8.2/operators?conditions=es2015",
+    "rxjs/ajax": "https://aistudiocdn.com/rxjs@^7.8.2/ajax?conditions=es2015",
+    "rxjs/webSocket": "https://aistudiocdn.com/rxjs@^7.8.2/webSocket?conditions=es2015",
+    "rxjs/testing": "https://aistudiocdn.com/rxjs@^7.8.2/testing?conditions=es2015",
+    "rxjs/fetch": "https://aistudiocdn.com/rxjs@^7.8.2/fetch?conditions=es2015",
+    "@google/genai": "https://next.esm.sh/@google/genai@^1.30.0?external=rxjs",
+    "@angular/platform-browser": "https://next.esm.sh/@angular/platform-browser@^21.0.2?external=rxjs",
+    "@angular/core": "https://next.esm.sh/@angular/core@^21.0.2?external=rxjs",
+    "@angular/compiler": "https://next.esm.sh/@angular/compiler@^21.0.2?external=rxjs",
+    "@angular/forms": "https://next.esm.sh/@angular/forms@^21.0.2?external=rxjs",
+    "marked": "https://esm.sh/marked@^13.0.2",
+    "dompurify": "https://esm.sh/dompurify@^3.1.6"
+  }
+}
+</script>
+</head>
+<body class="bg-gray-900 text-gray-200 font-sans">
+  <app-root></app-root>
+</body>
+</html>
