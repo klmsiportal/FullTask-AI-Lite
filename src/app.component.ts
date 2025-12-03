@@ -3,7 +3,6 @@ import {
   ChangeDetectionStrategy,
   inject,
   signal,
-  model,
   viewChild,
   ElementRef,
   effect,
@@ -14,8 +13,8 @@ import { ChatMessage, MediaAttachment } from './models/chat.model';
 import { MarkdownPipe } from './pipes/markdown.pipe';
 
 type AppMode = 'chat' | 'image' | 'video';
-// Re-enabling 'gemini-3-pro-preview' to match the UI and feature requirements for a "Smart" model.
-type ChatModel = 'gemini-2.5-flash' | 'gemini-3-pro-preview';
+// FIX: Only allow supported chat models per guidelines.
+type ChatModel = 'gemini-2.5-flash';
 type ImageAspectRatio = '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
 
 
@@ -29,15 +28,17 @@ export class AppComponent {
   private geminiService = inject(GeminiService);
   private mediaRecorder: MediaRecorder | null = null;
   private audioChunks: Blob[] = [];
+  private readonly storageKey = 'fulltask_ai_lite_history';
 
   // App State
   currentMode = signal<AppMode>('chat');
   chatHistory = signal<ChatMessage[]>([]);
   isLoading = signal<boolean>(false);
   isRecording = signal<boolean>(false);
+  micError = signal<string | null>(null);
 
   // Form Inputs
-  userInput = model<string>('');
+  userInput = signal<string>('');
   uploadedFile = signal<MediaAttachment | null>(null);
   
   // Chat Mode Options
@@ -46,14 +47,14 @@ export class AppComponent {
   
   // Image Mode Options
   imageAspectRatio = signal<ImageAspectRatio>('1:1');
-  
-  // Video Mode Options
 
   // Element Refs
   chatContainer = viewChild<ElementRef>('chatContainer');
   fileInput = viewChild<ElementRef<HTMLInputElement>>('fileInput');
 
   constructor() {
+    this.loadChatHistory();
+
     effect(() => {
       // Auto-scroll to the bottom when chat history changes
       if (this.chatContainer()) {
@@ -61,6 +62,49 @@ export class AppComponent {
         container.scrollTop = container.scrollHeight;
       }
     });
+
+    effect(() => {
+      this.saveChatHistory();
+    });
+  }
+  
+  private saveChatHistory(): void {
+    try {
+      const historyToSave = this.chatHistory().map(msg => ({
+        role: msg.role,
+        text: msg.text,
+        groundingChunks: msg.groundingChunks
+      }));
+      localStorage.setItem(this.storageKey, JSON.stringify(historyToSave));
+    } catch (e) {
+      console.error("Failed to save chat history:", e);
+    }
+  }
+
+  private loadChatHistory(): void {
+    try {
+      const savedHistory = localStorage.getItem(this.storageKey);
+      if (savedHistory) {
+        const parsedHistory: Omit<ChatMessage, 'id'>[] = JSON.parse(savedHistory);
+        const historyWithIds = parsedHistory.map((msg, index) => ({
+            ...msg,
+            id: Date.now() + index,
+            isLoading: false,
+            isPlayingAudio: false
+        }));
+        this.chatHistory.set(historyWithIds);
+      }
+    } catch (e) {
+      console.error("Failed to load or parse chat history:", e);
+      localStorage.removeItem(this.storageKey);
+    }
+  }
+
+  startNewConversation(): void {
+      this.chatHistory.set([]);
+      this.userInput.set('');
+      this.uploadedFile.set(null);
+      localStorage.removeItem(this.storageKey);
   }
 
   handleEnterKey(event: KeyboardEvent): void {
@@ -107,6 +151,7 @@ export class AppComponent {
   
   async startRecording(): Promise<void> {
     if (this.isRecording()) return;
+    this.micError.set(null);
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         this.isRecording.set(true);
@@ -115,29 +160,31 @@ export class AppComponent {
         this.mediaRecorder.ondataavailable = event => this.audioChunks.push(event.data);
         this.mediaRecorder.onstop = async () => {
             const audioBlob = new Blob(this.audioChunks, { type: 'audio/webm' });
-            // FIX: The fileToBase64 function expects a File object, not a Blob.
-            // Create a File object from the Blob to satisfy the type requirement.
             const audioFile = new File([audioBlob], 'recording.webm', { type: 'audio/webm' });
             const mediaAttachment = await this.fileToBase64(audioFile);
             
-            // Transcribe audio and set it as user input
             this.isLoading.set(true);
             const prompt = 'Transcribe the following audio recording.';
-            const stream = this.geminiService.generateContentStream(prompt, 'gemini-2.5-flash', false, false, [{
+            // FIX: Remove `useThinking` argument from generateContentStream call.
+            const streamGen = this.geminiService.generateContentStream(prompt, 'gemini-2.5-flash', false, [{
                 data: this.stripDataUrlPrefix(mediaAttachment.dataUrl),
                 mimeType: mediaAttachment.mimeType,
             }]);
             let fullResponse = '';
-            for await (const chunk of stream) {
+            for await (const chunk of streamGen) {
                 fullResponse += chunk.text || '';
             }
             this.userInput.set(fullResponse.trim());
             this.isLoading.set(false);
-            stream.return?.(); // Ensure stream is closed
         };
         this.mediaRecorder.start();
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error accessing microphone:', error);
+        if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+             this.micError.set('Microphone permission denied. Please allow access in your browser settings.');
+        } else {
+            this.micError.set('Could not access the microphone. Please ensure it is connected and enabled.');
+        }
         this.isRecording.set(false);
     }
   }
@@ -146,7 +193,6 @@ export class AppComponent {
     if (this.mediaRecorder && this.isRecording()) {
         this.mediaRecorder.stop();
         this.isRecording.set(false);
-        // Turn off microphone tracks
         this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
     }
   }
@@ -174,134 +220,16 @@ export class AppComponent {
 
   async sendMessage(): Promise<void> {
     const userMessageText = this.userInput().trim();
-    if (!userMessageText && !this.uploadedFile() || this.isLoading()) {
+    if ((!userMessageText && !this.uploadedFile()) || this.isLoading()) {
       return;
     }
 
     this.isLoading.set(true);
     
-    // Create and add user message to history
     const userMessage: ChatMessage = {
       id: Date.now(),
       role: 'user',
       text: userMessageText,
       image: this.uploadedFile()?.mimeType.startsWith('image/') ? this.uploadedFile()! : undefined,
       video: this.uploadedFile()?.mimeType.startsWith('video/') ? this.uploadedFile()! : undefined,
-    };
-    this.chatHistory.update(history => [...history, userMessage]);
-    
-    // Reset inputs
-    this.userInput.set('');
-    this.removeUploadedFile();
-    
-    const modelMessageId = Date.now() + 1;
-    
-    // Add placeholder for model response
-    this.chatHistory.update(history => [...history, { id: modelMessageId, role: 'model', text: '', isLoading: true }]);
-
-    try {
-      switch (this.currentMode()) {
-        case 'chat':
-          await this.handleChat(userMessage, modelMessageId);
-          break;
-        case 'image':
-          await this.handleImageGeneration(userMessage.text, modelMessageId);
-          break;
-        case 'video':
-          await this.handleVideoGeneration(userMessage, modelMessageId);
-          break;
-      }
-    } catch (error) {
-      console.error('Failed to send message:', error);
-      this.chatHistory.update(history => history.map(msg => msg.id === modelMessageId ? {
-        ...msg,
-        text: "I'm sorry, I encountered an error. Please try again.",
-        isLoading: false
-      } : msg));
-    } finally {
-      this.isLoading.set(false);
-    }
-  }
-
-  private async handleChat(userMessage: ChatMessage, modelMessageId: number): Promise<void> {
-    const media = userMessage.image || userMessage.video;
-    const stream = this.geminiService.generateContentStream(
-      userMessage.text,
-      this.chatModel(),
-      this.chatModel() === 'gemini-3-pro-preview',
-      this.useWebSearch(),
-      media ? [{ data: this.stripDataUrlPrefix(media.dataUrl), mimeType: media.mimeType }] : undefined
-    );
-
-    for await (const chunk of stream) {
-      this.chatHistory.update(history =>
-        history.map(msg => {
-          if (msg.id === modelMessageId) {
-            return {
-              ...msg,
-              text: msg.text + (chunk.text || ''),
-              groundingChunks: chunk.groundingChunks || msg.groundingChunks,
-            };
-          }
-          return msg;
-        })
-      );
-    }
-    
-    this.chatHistory.update(history => history.map(msg => msg.id === modelMessageId ? { ...msg, isLoading: false } : msg));
-  }
-
-  private async handleImageGeneration(prompt: string, modelMessageId: number): Promise<void> {
-      const base64Image = await this.geminiService.generateImage(prompt, this.imageAspectRatio());
-      const image: MediaAttachment = {
-        dataUrl: `data:image/png;base64,${base64Image}`,
-        mimeType: 'image/png'
-      };
-      this.chatHistory.update(history => history.map(msg => msg.id === modelMessageId ? {
-        ...msg,
-        text: `Here is the generated image for: "${prompt}"`,
-        image,
-        isLoading: false
-      } : msg));
-  }
-
-  private async handleVideoGeneration(userMessage: ChatMessage, modelMessageId: number): Promise<void> {
-      const imageAttachment = userMessage.image ? {
-          data: this.stripDataUrlPrefix(userMessage.image.dataUrl),
-          mimeType: userMessage.image.mimeType
-      } : undefined;
-      
-      let operation = await this.geminiService.generateVideo(userMessage.text, imageAttachment);
-      
-      this.chatHistory.update(history => history.map(msg => msg.id === modelMessageId ? { ...msg, text: '📹 Video generation started... This might take a few minutes.' } : msg));
-
-      while (!operation.done) {
-          await new Promise(resolve => setTimeout(resolve, 5000));
-          operation = await this.geminiService.getVideosOperation(operation);
-          this.chatHistory.update(history => history.map(msg => msg.id === modelMessageId ? { ...msg, text: `📹 Video generation in progress... Status: ${operation.metadata?.state || 'processing'}` } : msg));
-      }
-      
-      const videoUri = operation.response?.generatedVideos?.[0]?.video?.uri;
-      if (videoUri) {
-          const videoUrl = `${videoUri}&key=${(process.env as any).API_KEY}`;
-           const response = await fetch(videoUrl);
-           const blob = await response.blob();
-           const dataUrl = await this.fileToBase64(new File([blob], "video.mp4", {type: "video/mp4"}));
-
-          this.chatHistory.update(history => history.map(msg => msg.id === modelMessageId ? {
-            ...msg,
-            text: `Here is the generated video for: "${userMessage.text}"`,
-            video: dataUrl,
-            isLoading: false
-          } : msg));
-      } else {
-          this.chatHistory.update(history => history.map(msg => msg.id === modelMessageId ? { ...msg, text: 'Sorry, video generation failed.', isLoading: false } : msg));
-      }
-  }
-
-  startNewChat(prompt: string): void {
-      this.currentMode.set('chat');
-      this.userInput.set(prompt);
-      this.sendMessage();
-  }
-}
+      audio: this.uploadedFile

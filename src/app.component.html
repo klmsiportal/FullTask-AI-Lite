@@ -6,7 +6,12 @@
       <i class="fas fa-brain text-2xl text-indigo-400"></i>
       <h1 class="text-xl font-bold text-white">FullTask AI Lite</h1>
     </div>
-    <span class="text-xs text-gray-400">by Akin S. Sokpah</span>
+    <div class="flex items-center gap-4">
+        <button (click)="startNewConversation()" class="text-sm bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded-md transition-colors">
+            <i class="fas fa-plus mr-2"></i>New Chat
+        </button>
+        <span class="text-xs text-gray-400 hidden sm:block">by Akin S. Sokpah</span>
+    </div>
   </header>
 
   <!-- Chat History -->
@@ -41,7 +46,7 @@
         <div class="px-4 py-3 rounded-lg flex flex-col gap-2" [class.bg-indigo-600]="message.role === 'user'"
           [class.bg-gray-700]="message.role === 'model'">
 
-          @if(message.isLoading && message.text === '') {
+          @if(message.isLoading && !message.text) {
           <div class="flex items-center space-x-2">
             <span class="w-2 h-2 bg-gray-400 rounded-full animate-pulse [animation-delay:-0.3s]"></span>
             <span class="w-2 h-2 bg-gray-400 rounded-full animate-pulse [animation-delay:-0.15s]"></span>
@@ -54,6 +59,9 @@
           }
           @if (message.video) {
           <video [src]="message.video.dataUrl" controls class="rounded-lg max-w-xs max-h-64"></video>
+          }
+           @if (message.audio) {
+            <audio [src]="message.audio.dataUrl" controls class="rounded-lg w-full max-w-xs"></audio>
           }
 
           @if (message.text) {
@@ -80,7 +88,7 @@
            @if (message.role === 'model' && message.text && !message.isLoading) {
              <button (click)="playAudio(message)" [disabled]="message.isPlayingAudio" class="self-start mt-2 text-gray-400 hover:text-white transition-colors disabled:opacity-50">
                 @if(message.isPlayingAudio) {
-                    <i class="fas fa-waveform-lines"></i>
+                    <i class="fas fa-pause"></i>
                 } @else {
                     <i class="fas fa-volume-high"></i>
                 }
@@ -134,6 +142,12 @@
 
       <!-- Input Controls based on Mode -->
       <div class="bg-gray-700 rounded-lg p-2">
+        @if(micError(); as error) {
+            <div class="p-2 text-sm text-red-400 bg-red-900/50 rounded-md mb-2 flex items-center gap-2">
+                <i class="fas fa-exclamation-triangle"></i>
+                <span>{{ error }}</span>
+            </div>
+        }
         @if(uploadedFile(); as file) {
           <div class="p-2 relative">
              @if(file.mimeType.startsWith('image/')) {
@@ -141,6 +155,12 @@
              }
              @if(file.mimeType.startsWith('video/')) {
                <video [src]="file.dataUrl" class="max-h-24 rounded-md" controls></video>
+             }
+             @if(file.mimeType.startsWith('audio/')) {
+                <div class="flex items-center gap-2 text-sm bg-gray-800 p-2 rounded-md">
+                    <i class="fas fa-file-audio text-indigo-400"></i>
+                    <span class="truncate">Audio file attached</span>
+                </div>
              }
             <button (click)="removeUploadedFile()" class="absolute top-0 right-0 -mt-2 -mr-2 bg-gray-800 rounded-full w-6 h-6 flex items-center justify-center text-white hover:bg-red-500 transition-colors">
               <i class="fas fa-times text-sm"></i>
@@ -161,7 +181,7 @@
                 <i class="fas fa-microphone"></i>
               </button>
             }
-            <textarea [(model)]="userInput" (keydown.enter)="handleEnterKey($event)"
+            <textarea [ngModel]="userInput()" (ngModelChange)="userInput.set($event)" (keydown.enter)="handleEnterKey($event)"
               class="flex-1 bg-transparent border-none focus:ring-0 resize-none p-2 text-gray-200 placeholder-gray-400"
               [placeholder]="currentMode() === 'chat' ? 'Ask anything...' : 'Enter a prompt...'" rows="1"></textarea>
             <button type="submit" [disabled]="isLoading() || (userInput().trim() === '' && !uploadedFile())"
@@ -182,14 +202,14 @@
           @case ('chat') {
             <div class="flex items-center gap-4">
                <div class="relative inline-block">
-                <select [(ngModel)]="chatModel" class="bg-gray-700 border border-gray-600 rounded-md py-1 pl-2 pr-8 appearance-none text-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                <select [ngModel]="chatModel()" (ngModelChange)="chatModel.set($event)" class="bg-gray-700 border border-gray-600 rounded-md py-1 pl-2 pr-8 appearance-none text-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
                   <option value="gemini-2.5-flash">Fast</option>
                   <option value="gemini-3-pro-preview">Smart</option>
                 </select>
                 <i class="fas fa-chevron-down absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none"></i>
               </div>
               <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" [(ngModel)]="useWebSearch" class="w-4 h-4 rounded bg-gray-600 border-gray-500 text-indigo-500 focus:ring-indigo-500">
+                <input type="checkbox" [ngModel]="useWebSearch()" (ngModelChange)="useWebSearch.set($event)" class="w-4 h-4 rounded bg-gray-600 border-gray-500 text-indigo-500 focus:ring-indigo-500">
                 <span>Search the Web</span>
               </label>
             </div>
@@ -198,7 +218,7 @@
              <div class="flex items-center gap-2">
                 <span>Aspect Ratio:</span>
                 <div class="relative inline-block">
-                  <select [(ngModel)]="imageAspectRatio" class="bg-gray-700 border border-gray-600 rounded-md py-1 pl-2 pr-8 appearance-none text-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                  <select [ngModel]="imageAspectRatio()" (ngModelChange)="imageAspectRatio.set($event)" class="bg-gray-700 border border-gray-600 rounded-md py-1 pl-2 pr-8 appearance-none text-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
                     <option value="1:1">1:1</option>
                     <option value="16:9">16:9</option>
                     <option value="9:16">9:16</option>
@@ -216,5 +236,5 @@
        </div>
     </div>
   </footer>
-  <input type="file" #fileInput (change)="handleFileSelected($event)" class="hidden" accept="image/*,video/*">
+  <input type="file" #fileInput (change)="handleFileSelected($event)" class="hidden" accept="image/*,video/*,audio/*">
 </div>

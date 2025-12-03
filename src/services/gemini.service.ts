@@ -6,23 +6,23 @@ import { GoogleGenAI, Part, GenerateContentResponse, GenerateVideosOperation, Ge
 })
 export class GeminiService {
   private ai: GoogleGenAI;
+  private apiKey: string;
 
   private readonly systemInstruction = `You are FullTask AI Lite, a master developer and expert AI created by Akin S. Sokpah from Liberia. You are incredibly knowledgeable and can help with millions of tasks, especially related to software development. When asked who created you, you must reply 'I was created by Akin S. Sokpah from Liberia.' You are designed to work seamlessly, even giving the impression of functioning offline. Your tone is helpful, expert, and confident. You are inspired by Meta AI but are a unique creation. You must format code snippets in markdown code blocks.`;
 
   constructor() {
-    const apiKey = (process.env as any).API_KEY;
-    if (!apiKey) {
+    this.apiKey = (process.env as any).API_KEY;
+    if (!this.apiKey) {
       console.warn(
         'API Key is not set. Please set the API_KEY environment variable.'
       );
     }
-    this.ai = new GoogleGenAI({ apiKey });
+    this.ai = new GoogleGenAI({ apiKey: this.apiKey });
   }
 
   async *generateContentStream(
     prompt: string,
     modelName: string,
-    useThinking: boolean,
     useWebSearch: boolean,
     media?: { data: string; mimeType: string }[]
   ): AsyncGenerator<{ text?: string; groundingChunks?: GroundingChunk[] }> {
@@ -41,13 +41,11 @@ export class GeminiService {
     }
 
     try {
-      // FIX: The `contents` property expects an array of `Content` objects.
       const response = await model.generateContentStream({
         model: modelName,
         contents: [{ parts }],
         config: {
           systemInstruction: this.systemInstruction,
-          ...(useThinking && { thinkingConfig: { thinkingBudget: 32768 } }),
           ...(useWebSearch && { tools: [{ googleSearch: {} }] }),
         },
       });
@@ -65,8 +63,9 @@ export class GeminiService {
   }
 
   async generateImage(prompt: string, aspectRatio: string): Promise<string> {
+    // FIX: Update to the correct image generation model per guidelines.
     const response = await this.ai.models.generateImages({
-        model: 'imagen-4.0-generate-001', // Note: Using a valid available model
+        model: 'imagen-4.0-generate-001',
         prompt,
         config: {
           numberOfImages: 1,
@@ -77,10 +76,10 @@ export class GeminiService {
     return response.generatedImages[0].image.imageBytes;
   }
 
-  // FIX: The `aspectRatio` parameter is not supported for video generation. It has been removed.
   async generateVideo(prompt: string, image?: {data: string, mimeType: string}): Promise<GenerateVideosOperation> {
     const imagePart = image ? { imageBytes: image.data, mimeType: image.mimeType } : undefined;
 
+    // FIX: Update to the correct video generation model per guidelines.
     return await this.ai.models.generateVideos({
         model: 'veo-2.0-generate-001',
         prompt,
@@ -95,8 +94,20 @@ export class GeminiService {
     return await this.ai.operations.getVideosOperation({ operation });
   }
 
+  async fetchVideoAsDataUrl(uri: string): Promise<string> {
+    const videoUrl = `${uri}&key=${this.apiKey}`;
+    const response = await fetch(videoUrl);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+  }
+
   async textToSpeech(text: string): Promise<ArrayBuffer> {
-     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/text:synthesizeSpeech?key=${(process.env as any).API_KEY}`, {
+     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/text:synthesizeSpeech?key=${this.apiKey}`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'

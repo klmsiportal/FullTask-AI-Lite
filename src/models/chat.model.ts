@@ -18,6 +18,7 @@ export interface ChatMessage {
   text: string;
   image?: MediaAttachment;
   video?: MediaAttachment;
+  audio?: MediaAttachment;
   groundingChunks?: GroundingChunk[];
   isLoading?: boolean; // For streaming or long operations like video generation
   isPlayingAudio?: boolean; // For TTS
