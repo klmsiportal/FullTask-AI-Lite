@@ -9,12 +9,11 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { GeminiService } from './services/gemini.service';
-import { ChatMessage, MediaAttachment } from './models/chat.model';
+import { ChatMessage, MediaAttachment, GroundingChunk } from './models/chat.model';
 import { MarkdownPipe } from './pipes/markdown.pipe';
 
 type AppMode = 'chat' | 'image' | 'video';
-// FIX: Only allow supported chat models per guidelines.
-type ChatModel = 'gemini-2.5-flash';
+type ChatModel = 'gemini-2.5-flash' | 'gemini-3-pro-preview';
 type ImageAspectRatio = '1:1' | '16:9' | '9:16' | '4:3' | '3:4';
 
 
@@ -106,6 +105,13 @@ export class AppComponent {
       this.uploadedFile.set(null);
       localStorage.removeItem(this.storageKey);
   }
+  
+  startNewChat(prompt: string): void {
+    this.startNewConversation();
+    this.userInput.set(prompt);
+    // Use a microtask to ensure the input value updates in the DOM before sending.
+    Promise.resolve().then(() => this.sendMessage());
+  }
 
   handleEnterKey(event: KeyboardEvent): void {
     if (!event.shiftKey) {
@@ -165,7 +171,6 @@ export class AppComponent {
             
             this.isLoading.set(true);
             const prompt = 'Transcribe the following audio recording.';
-            // FIX: Remove `useThinking` argument from generateContentStream call.
             const streamGen = this.geminiService.generateContentStream(prompt, 'gemini-2.5-flash', false, [{
                 data: this.stripDataUrlPrefix(mediaAttachment.dataUrl),
                 mimeType: mediaAttachment.mimeType,
@@ -225,11 +230,149 @@ export class AppComponent {
     }
 
     this.isLoading.set(true);
-    
+
     const userMessage: ChatMessage = {
       id: Date.now(),
       role: 'user',
       text: userMessageText,
       image: this.uploadedFile()?.mimeType.startsWith('image/') ? this.uploadedFile()! : undefined,
       video: this.uploadedFile()?.mimeType.startsWith('video/') ? this.uploadedFile()! : undefined,
-      audio: this.uploadedFile
+      audio: this.uploadedFile()?.mimeType.startsWith('audio/') ? this.uploadedFile()! : undefined,
+    };
+
+    this.chatHistory.update(history => [...history, userMessage]);
+    this.userInput.set('');
+
+    // Dispatch to the correct handler based on the current mode
+    switch (this.currentMode()) {
+      case 'chat':
+        await this.handleChat(userMessage);
+        break;
+      case 'image':
+        await this.handleImageGeneration(userMessage);
+        break;
+      case 'video':
+        await this.handleVideoGeneration(userMessage);
+        break;
+    }
+
+    this.removeUploadedFile(); // Clear file after sending
+    this.isLoading.set(false);
+  }
+
+  private async handleChat(userMessage: ChatMessage): Promise<void> {
+    const modelResponseId = Date.now() + 1;
+    this.chatHistory.update(history => [...history, {
+      id: modelResponseId,
+      role: 'model',
+      text: '',
+      isLoading: true
+    }]);
+
+    const media = userMessage.image || userMessage.video || userMessage.audio;
+    const mediaParts = media ? [{
+      data: this.stripDataUrlPrefix(media.dataUrl),
+      mimeType: media.mimeType,
+    }] : undefined;
+
+    const stream = this.geminiService.generateContentStream(
+      userMessage.text,
+      this.chatModel(),
+      this.useWebSearch(),
+      mediaParts
+    );
+
+    let fullText = '';
+    let groundingChunks: GroundingChunk[] = [];
+    for await (const chunk of stream) {
+      fullText += chunk.text || '';
+      if (chunk.groundingChunks) {
+        groundingChunks.push(...chunk.groundingChunks);
+      }
+      this.chatHistory.update(history => history.map(m => m.id === modelResponseId ? { ...m, text: fullText, groundingChunks } : m));
+    }
+
+    this.chatHistory.update(history => history.map(m => m.id === modelResponseId ? { ...m, isLoading: false } : m));
+  }
+
+  private async handleImageGeneration(userMessage: ChatMessage): Promise<void> {
+    const modelResponseId = Date.now() + 1;
+    this.chatHistory.update(history => [...history, {
+      id: modelResponseId,
+      role: 'model',
+      text: `Generating an image for: "${userMessage.text}"`,
+      isLoading: true
+    }]);
+
+    try {
+      const imageBytes = await this.geminiService.generateImage(userMessage.text, this.imageAspectRatio());
+      const dataUrl = `data:image/png;base64,${imageBytes}`;
+      const imageAttachment: MediaAttachment = { dataUrl, mimeType: 'image/png' };
+
+      this.chatHistory.update(history => history.map(m => m.id === modelResponseId ? {
+        ...m,
+        text: '',
+        image: imageAttachment,
+        isLoading: false
+      } : m));
+    } catch (e) {
+      console.error("Image generation failed:", e);
+      this.chatHistory.update(history => history.map(m => m.id === modelResponseId ? {
+        ...m,
+        text: 'Sorry, I was unable to generate the image. Please try again.',
+        isLoading: false
+      } : m));
+    }
+  }
+
+  private async handleVideoGeneration(userMessage: ChatMessage): Promise<void> {
+    const modelResponseId = Date.now() + 1;
+    this.chatHistory.update(history => [...history, {
+      id: modelResponseId,
+      role: 'model',
+      text: '🎬 Starting video generation... This may take a few minutes.',
+      isLoading: true
+    }]);
+
+    try {
+      const image = userMessage.image ? {
+        data: this.stripDataUrlPrefix(userMessage.image.dataUrl),
+        mimeType: userMessage.image.mimeType
+      } : this.uploadedFile()?.mimeType.startsWith('image/') ? {
+        data: this.stripDataUrlPrefix(this.uploadedFile()!.dataUrl),
+        mimeType: this.uploadedFile()!.mimeType
+      } : undefined;
+
+      let operation = await this.geminiService.generateVideo(userMessage.text, image);
+
+      this.chatHistory.update(history => history.map(m => m.id === modelResponseId ? { ...m, text: '🤖 Processing video request... The AI is thinking.' } : m));
+
+      while (!operation.done) {
+        await new Promise(resolve => setTimeout(resolve, 10000)); // Poll every 10 seconds
+        operation = await this.geminiService.getVideosOperation(operation);
+      }
+
+      const uri = operation.response?.generatedVideos?.[0]?.video?.uri;
+      if (uri) {
+        this.chatHistory.update(history => history.map(m => m.id === modelResponseId ? { ...m, text: '✅ Video processed! Downloading...' } : m));
+        const dataUrl = await this.geminiService.fetchVideoAsDataUrl(uri);
+        const videoAttachment: MediaAttachment = { dataUrl, mimeType: 'video/mp4' };
+        this.chatHistory.update(history => history.map(m => m.id === modelResponseId ? {
+          ...m,
+          text: '',
+          video: videoAttachment,
+          isLoading: false
+        } : m));
+      } else {
+        throw new Error("Video generation completed, but no URI was returned.");
+      }
+    } catch (e) {
+      console.error("Video generation failed:", e);
+      this.chatHistory.update(history => history.map(m => m.id === modelResponseId ? {
+        ...m,
+        text: 'Sorry, I was unable to generate the video. Please try again or check the console.',
+        isLoading: false
+      } : m));
+    }
+  }
+}

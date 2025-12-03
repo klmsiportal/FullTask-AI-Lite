@@ -12,14 +12,19 @@ export class MarkdownPipe implements PipeTransform {
   private sanitizer: DomSanitizer = inject(DomSanitizer);
 
   constructor() {
-    // Configure marked to add syntax highlighting classes for code blocks
+    // FIX: The 'highlight' option is not a known property in some versions of Marked's types.
+    // To fix the error and ensure code blocks get a language class for styling,
+    // we use a custom renderer.
+    const renderer = new marked.Renderer();
+    const originalCodeRenderer = renderer.code;
+
+    renderer.code = (code: string, lang: string | undefined, escaped: boolean) => {
+      const language = lang || 'plaintext';
+      return originalCodeRenderer.call(renderer, code, language, escaped);
+    };
+
     marked.setOptions({
-      highlight: (code, lang) => {
-        // In a real app, you might use a library like highlight.js here
-        // For now, this provides basic structure for styling.
-        const language = lang || 'plaintext';
-        return `<pre><code class="language-${language}">${code}</code></pre>`;
-      },
+      renderer,
       gfm: true,
       breaks: true,
     });

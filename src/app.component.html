@@ -181,7 +181,7 @@
                 <i class="fas fa-microphone"></i>
               </button>
             }
-            <textarea [ngModel]="userInput()" (ngModelChange)="userInput.set($event)" (keydown.enter)="handleEnterKey($event)"
+            <textarea [ngModel]="userInput()" (ngModelChange)="userInput.set($event)" [ngModelOptions]="{standalone: true}" (keydown.enter)="handleEnterKey($event)"
               class="flex-1 bg-transparent border-none focus:ring-0 resize-none p-2 text-gray-200 placeholder-gray-400"
               [placeholder]="currentMode() === 'chat' ? 'Ask anything...' : 'Enter a prompt...'" rows="1"></textarea>
             <button type="submit" [disabled]="isLoading() || (userInput().trim() === '' && !uploadedFile())"
@@ -202,14 +202,14 @@
           @case ('chat') {
             <div class="flex items-center gap-4">
                <div class="relative inline-block">
-                <select [ngModel]="chatModel()" (ngModelChange)="chatModel.set($event)" class="bg-gray-700 border border-gray-600 rounded-md py-1 pl-2 pr-8 appearance-none text-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                <select [ngModel]="chatModel()" (ngModelChange)="chatModel.set($event)" [ngModelOptions]="{standalone: true}" class="bg-gray-700 border border-gray-600 rounded-md py-1 pl-2 pr-8 appearance-none text-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
                   <option value="gemini-2.5-flash">Fast</option>
                   <option value="gemini-3-pro-preview">Smart</option>
                 </select>
                 <i class="fas fa-chevron-down absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none"></i>
               </div>
               <label class="flex items-center gap-2 cursor-pointer">
-                <input type="checkbox" [ngModel]="useWebSearch()" (ngModelChange)="useWebSearch.set($event)" class="w-4 h-4 rounded bg-gray-600 border-gray-500 text-indigo-500 focus:ring-indigo-500">
+                <input type="checkbox" [ngModel]="useWebSearch()" (ngModelChange)="useWebSearch.set($event)" [ngModelOptions]="{standalone: true}" class="w-4 h-4 rounded bg-gray-600 border-gray-500 text-indigo-500 focus:ring-indigo-500">
                 <span>Search the Web</span>
               </label>
             </div>
@@ -218,7 +218,7 @@
              <div class="flex items-center gap-2">
                 <span>Aspect Ratio:</span>
                 <div class="relative inline-block">
-                  <select [ngModel]="imageAspectRatio()" (ngModelChange)="imageAspectRatio.set($event)" class="bg-gray-700 border border-gray-600 rounded-md py-1 pl-2 pr-8 appearance-none text-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                  <select [ngModel]="imageAspectRatio()" (ngModelChange)="imageAspectRatio.set($event)" [ngModelOptions]="{standalone: true}" class="bg-gray-700 border border-gray-600 rounded-md py-1 pl-2 pr-8 appearance-none text-white focus:outline-none focus:ring-1 focus:ring-indigo-500">
                     <option value="1:1">1:1</option>
                     <option value="16:9">16:9</option>
                     <option value="9:16">9:16</option>

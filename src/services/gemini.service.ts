@@ -39,6 +39,8 @@ export class GeminiService {
         });
       }
     }
+    
+    const isProModel = modelName === 'gemini-3-pro-preview';
 
     try {
       const response = await model.generateContentStream({
@@ -47,6 +49,7 @@ export class GeminiService {
         config: {
           systemInstruction: this.systemInstruction,
           ...(useWebSearch && { tools: [{ googleSearch: {} }] }),
+          ...(isProModel && { thinkingConfig: { thinkingBudget: 32768 } }),
         },
       });
 
@@ -63,7 +66,6 @@ export class GeminiService {
   }
 
   async generateImage(prompt: string, aspectRatio: string): Promise<string> {
-    // FIX: Update to the correct image generation model per guidelines.
     const response = await this.ai.models.generateImages({
         model: 'imagen-4.0-generate-001',
         prompt,
@@ -79,7 +81,6 @@ export class GeminiService {
   async generateVideo(prompt: string, image?: {data: string, mimeType: string}): Promise<GenerateVideosOperation> {
     const imagePart = image ? { imageBytes: image.data, mimeType: image.mimeType } : undefined;
 
-    // FIX: Update to the correct video generation model per guidelines.
     return await this.ai.models.generateVideos({
         model: 'veo-2.0-generate-001',
         prompt,
